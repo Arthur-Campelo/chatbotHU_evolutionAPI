@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Paciente {
+  id             String     @id @default(uuid()) @db.Uuid
+  cpf            String     @unique @db.VarChar(11)
+  nome           String     @db.VarChar(150)
+  dataNascimento DateTime   @db.Date
+  telefone       String     @unique @db.VarChar(15)
+  criadoEm       DateTime   @default(now()) @db.Timestamptz(6)
+  atualizadoEm   DateTime   @updatedAt @db.Timestamptz(6)
+  lembretes      Lembrete[]
+}
+
+model Lembrete {
+  id              String   @id @default(uuid()) @db.Uuid
+  pacienteId      String   @db.Uuid
+  paciente        Paciente @relation(fields: [pacienteId], references: [id])
+  dataConsulta    DateTime @db.Date
+  programadoPara  DateTime @db.Timestamptz(6)
+  limiteEnvio     DateTime @db.Timestamptz(6)
+  status          String   @default("PENDENTE") @db.VarChar(20)
+  tentativas      Int      @default(0)
+  proximaTentativa DateTime? @db.Timestamptz(6)
+  reservadoAte    DateTime? @db.Timestamptz(6)
+  envioId         String?  @db.Uuid
+  erro            String?  @db.VarChar(255)
+  criadoEm        DateTime @default(now()) @db.Timestamptz(6)
+  atualizadoEm    DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([pacienteId, dataConsulta])
+  @@index([status, proximaTentativa, programadoPara])
+}
+
+model ControleConversa {
+  id                       String    @id @default(uuid()) @db.Uuid
+  instancia                String    @db.VarChar(100)
+  telefone                 String    @db.VarChar(15)
+  pausadoAte               DateTime? @db.Timestamptz(6)
+  ultimaIntervencaoManual  DateTime? @db.Timestamptz(6)
+  ultimaRetomadaExplicita  DateTime? @db.Timestamptz(6)
+
+  @@unique([instancia, telefone])
+}
+
+model EventoProcessado {
+  id          String   @id @default(uuid()) @db.Uuid
+  instancia   String   @db.VarChar(100)
+  mensagemId  String   @db.VarChar(150)
+  direcao     String   @db.VarChar(10)
+  status      String   @default("PROCESSANDO") @db.VarChar(20)
+  recebidoEm  DateTime @default(now()) @db.Timestamptz(6)
+  concluidoEm DateTime? @db.Timestamptz(6)
+
+  @@unique([instancia, mensagemId, direcao])
+}
+
+model EnvioBot {
+  id             String    @id @default(uuid()) @db.Uuid
+  instancia      String    @db.VarChar(100)
+  telefone       String    @db.VarChar(15)
+  finalidade     String    @db.VarChar(40)
+  referenciaId   String?   @db.Uuid
+  conteudoHash   String?   @map("conteudo")
+  mensagemId     String?   @db.VarChar(150)
+  status         String    @default("PREPARADO") @db.VarChar(20)
+  tentativas     Int       @default(0)
+  iniciadoEm     DateTime? @db.Timestamptz(6)
+  concluidoEm    DateTime? @db.Timestamptz(6)
+  criadoEm       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([instancia, mensagemId])
+  @@unique([finalidade, referenciaId])
+  @@index([instancia, telefone, status, criadoEm])
+}

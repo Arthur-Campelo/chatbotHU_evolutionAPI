@@ -1,248 +1,81 @@
-# Chatbot WhatsApp — Ambulatório HU (Evolution API)
+# Chatbot do Ambulatório HU
 
-Servidor de webhook em Node.js/Express que conduz o fluxo de atendimento do
-Ambulatório HU (remarcação, cancelamento e consulta de consultas) via
-WhatsApp, integrado à **Evolution API**, usando menus numéricos em texto.
----
+Bot de WhatsApp em Node.js/Express integrado à Evolution API 2.3.7. O PostgreSQL do Supabase guarda pacientes, pausas de atendimento e lembretes. O PostgreSQL da Evolution é separado.
 
-## 1. Tecnologias e versões
+## Preparação
 
-| Tecnologia | Versão | Observação |
-|---|---|---|
-| **Node.js** | 22.x LTS ou 24.x LTS | Evite Node 18/20 — saindo de manutenção. Confirme com `node --version`. |
-| **npm** | vem junto com o Node | Confirme com `npm --version`. |
-| **nodemon** (dev) | `^3.1.4` | Opcional, só para `npm run dev`. |
-| **Evolution API** (imagem Docker) | `evoapicloud/evolution-api:v2.3.7` | Confirmada funcionando nos testes. |
-| **PostgreSQL** | 16-alpine | Armazena dados da instância (Evolution API). |
-| **Redis** | 7-alpine | Cache da Evolution API. |
-| **Docker Desktop** | mais recente disponível | Precisa estar aberto e rodando (ícone da baleia parado na bandeja do sistema) antes de qualquer comando `docker`. |
-| **Ngrok** | mais recente | Expõe a porta local do bot para a internet. |
+Requisitos: Node.js 22/24, PostgreSQL e uma instância Evolution API conectada por QR Code/Baileys. Para envio das mensagens às 07:00, bot, worker, Evolution e banco precisam permanecer disponíveis.
 
----
+1. Crie um projeto Supabase. No painel **Connect**, copie a conexão direta (se houver IPv6) ou **Session pooler**, porta `5432`. Para o backend persistente, use a mesma modalidade em `DATABASE_URL` e `DIRECT_URL`. Não use o pooler de transações para migrations.
+2. Copie `.env.example` para `.env` e preencha as variáveis. `WEBHOOK_SECRET` deve ser uma chave aleatória forte. `ALLOWED_NUMBER` limita os testes a um telefone; vazio permite qualquer conversa individual válida.
+3. Rode `npm ci`, `npm run db:generate` e `npm run db:migrate:deploy` dentro de `ambulatorio-hu-bot/`.
+4. Inicie `npm start` e, em outro processo, `npm run worker`. Em desenvolvimento, `npm run dev` substitui `npm start`.
+5. Configure o webhook da instância Evolution com cabeçalho `x-webhook-secret` igual a `WEBHOOK_SECRET`, `webhook_by_events=false` e eventos `MESSAGES_UPSERT` e `SEND_MESSAGE`. Neste computador, a URL é `http://host.docker.internal:3000/webhook`; use `https://SEU_HOST/webhook` somente se a Evolution estiver em outra máquina ou se optar por um túnel público. A rota `GET http://localhost:3000/` verifica o bot.
 
-## 2. Estrutura do projeto
+Não registre o segredo no repositório. A URL de um túnel temporário, como Ngrok, deve ser atualizada na Evolution ao mudar.
 
-```
-ambulatorio-hu-bot\
-├── package.json
-├── .env.example
-├── README.md
-├── AGENTS.md
-└── src\
-    ├── server.js          # servidor Express e rota /webhook
-    ├── flow.js            # definição das páginas / máquina de estados (menu numérico)
-    ├── sessionManager.js  # sessão em memória por senderNumber
-    ├── evolutionApi.js    # envio de texto para a Evolution API
-    └── webhookHandler.js  # roteamento, allowlist e máquina de estados
+## Iniciar tudo no mesmo computador (Windows + Docker Desktop)
 
-evolution-api-server\        # pasta separada, fora do bot
-├── .env
-└── docker-compose.yml
-```
+Este checkout contém `../evolution-api-server/docker-compose.yml`: ele inicia a Evolution API 2.3.7, seu PostgreSQL próprio e Redis. O Supabase usado pelo bot é **outro** banco; não altere a conexão interna da Evolution para apontá-la ao Supabase.
 
----
+1. Abra o Docker Desktop e espere o mecanismo Docker iniciar. No PowerShell, rode:
 
-## 3. Pré-requisitos
+   ```powershell
+   cd D:\Downloads\ambulatorio-hu-bot\evolution-api-server
+   docker compose up -d
+   docker compose ps
+   ```
 
-1. **Docker Desktop** instalado. Baixe em https://www.docker.com/products/docker-desktop/
-2. **Node.js** 22 LTS ou 24 LTS. Baixe em https://nodejs.org
-3. **Ngrok** instalado e com conta criada (a versão gratuita atende). Baixe
-   em https://ngrok.com/download
-4. Um número de WhatsApp separado para conectar na instância — (Não se preocupe não vai responder mensagem de todos apenas do que vc deixar no allowedNumber no env)
+   A Evolution deve ficar acessível em `http://localhost:8080`; abra `http://localhost:8080/manager` para administrar a instância. Se `docker compose` disser que não consegue acessar `dockerDesktopLinuxEngine`, o Docker Desktop ainda não iniciou.
 
----
+2. No `.env` do bot, `EVOLUTION_API_URL` deve ser `http://localhost:8080`. `EVOLUTION_API_KEY` deve ser igual a `AUTHENTICATION_API_KEY` de `../evolution-api-server/.env`, e `INSTANCE_NAME` deve ser o nome exato da instância que você criará no Manager. Defina um valor aleatório real em `WEBHOOK_SECRET`. Não publique os arquivos `.env`.
+3. No PowerShell, execute as migrations e inicie o bot:
 
-## 4. Parte 1 — Subindo a Evolution API (Docker)
+   ```powershell
+   cd D:\Downloads\ambulatorio-hu-bot\ambulatorio-hu-bot
+   npm run db:generate
+   npm run db:migrate:deploy
+   npm start
+   ```
 
-Crie a pasta `evolution-api-server` (separada da pasta do bot) e coloque
-os dois arquivos abaixo dentro dela.
+   Confira `http://localhost:3000/`; em um segundo terminal na mesma pasta, rode `npm run worker`.
+4. No Manager da Evolution, crie ou abra a instância `ambulatorio-hu`, conecte o WhatsApp por QR Code e configure o webhook da instância. Como a Evolution está em um contêiner Docker e o bot roda no Windows, use `http://host.docker.internal:3000/webhook`, com `webhook_by_events=false`, eventos `MESSAGES_UPSERT` e `SEND_MESSAGE` e cabeçalho `x-webhook-secret` igual ao `WEBHOOK_SECRET` do bot. `localhost:3000` dentro do contêiner não aponta para o Windows.
 
-**`.env`**:
+**Ngrok é opcional neste cenário local.** Supabase guarda dados; Evolution liga o bot ao WhatsApp; Ngrok apenas fornece uma URL HTTPS pública para o webhook quando a Evolution está fora do seu computador ou não consegue alcançar o bot diretamente. Se optar por ele, rode `ngrok http 3000` e configure na Evolution `https://URL-DO-NGROK/webhook`; atualize a URL sempre que o túnel mudar.
 
-```dotenv
-AUTHENTICATION_API_KEY=troque-por-uma-chave-forte-aleatoria
-SERVER_URL=http://localhost:8080
+## Diagnóstico de mensagens sem resposta
 
-DATABASE_ENABLED=true
-DATABASE_PROVIDER=postgresql
-DATABASE_CONNECTION_URI=postgresql://evolution:evolution@postgres:5432/evolution
-DATABASE_URL=postgresql://evolution:evolution@postgres:5432/evolution
-DATABASE_SAVE_DATA_INSTANCE=true
-
-CACHE_REDIS_ENABLED=true
-CACHE_REDIS_URI=redis://redis:6379/6
-```
-
-Só em produção pode deixar `troque-por-uma-chave-forte-aleatoria` como chave
+O ponto de entrada é `POST /webhook` em `src/server.js`; o filtro de instância, telefone e número autorizado fica em `src/webhookHandler.js`. Para ver por que a próxima mensagem foi aceita ou ignorada, interrompa apenas o processo do bot (`Ctrl+C`) e reinicie no PowerShell:
 
 ```powershell
-[guid]::NewGuid().ToString()
-```
-
-**`docker-compose.yml`**:
-
-```yaml
-services:
-  evolution-api:
-    image: evoapicloud/evolution-api:v2.3.7
-    container_name: evolution_api
-    restart: always
-    ports:
-      - "8080:8080"
-    env_file:
-      - .env
-    volumes:
-      - evolution_instances:/evolution/instances
-    depends_on:
-      - postgres
-      - redis
-
-  postgres:
-    image: postgres:16-alpine
-    container_name: evolution_postgres
-    restart: always
-    environment:
-      POSTGRES_DB: evolution
-      POSTGRES_USER: evolution
-      POSTGRES_PASSWORD: evolution
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    container_name: evolution_redis
-    restart: always
-    volumes:
-      - redis_data:/data
-
-volumes:
-  evolution_instances:
-  postgres_data:
-  redis_data:
-```
-
-> A linha `version: '3.9'` no topo do arquivo é opcional — o Docker
-> Compose atual a considera obsoleta e mostra um warning no console, mas
-> isso não afeta o funcionamento.
-
-No PowerShell, dentro da pasta `evolution-api-server`:
-
-```powershell
-docker compose up -d
-docker compose logs -f evolution-api
-```
-
-**Erros comuns nesse passo:**
-- `unable to get image ... dockerDesktopLinuxEngine`: o Docker Desktop não
-  está aberto. Abra o app e espere o ícone da baleia (na bandeja do
-  sistema, perto do relógio) ficar parado antes de repetir o comando.
-- `pull access denied for atendai/evolution-api`: essa imagem foi
-  descontinuada — use `evoapicloud/evolution-api`, como já está no
-  `docker-compose.yml` acima.
-
----
-
-## 5. Parte 2 — Criando e conectando a instância no Manager
-
-1. Acesse **http://localhost:8080/manager** no navegador.
-2. Faça login com o valor de `AUTHENTICATION_API_KEY` do `.env`.
-3. Crie uma nova instância (ex.: nome `ambulatorio-hu`) — anote esse nome
-   exatamente como digitado, será o `INSTANCE_NAME` do bot.
-4. Deixe o tipo de conexão como Baileys/WhatsApp Web (padrão) e confirme.
-5. Escaneie o QR Code com o WhatsApp de teste (WhatsApp > Aparelhos
-   conectados > Conectar um aparelho).
-6. Confirme que o status da instância ficou `open`/conectado.
-7. Ainda no Manager, vá em **Events → Webhook** e configure:
-   - **Enabled**: ligado
-   - **URL**: deixe em branco por enquanto — só vamos ter a URL do Ngrok
-     na Parte 4
-   - **Webhook by Events**: desligado
-   - Marque o evento **MESSAGES_UPSERT**
-
----
-
-## 6. Parte 3 — Configurando e rodando o bot
-
-No PowerShell, na raiz do projeto do bot (`ambulatorio-hu-bot`):
-
-```powershell
-npm install
-```
-
-Crie o `.env` a partir do `.env.example`:
-
-```powershell
-copy .env.example .env
-```
-
-Abra o `.env` e preencha:
-
-```dotenv
-PORT=3000
-EVOLUTION_API_URL=http://localhost:8080
-EVOLUTION_API_KEY=mesmo_valor_do_AUTHENTICATION_API_KEY
-INSTANCE_NAME=ambulatorio-hu
-ALLOWED_NUMBER=55SEUNUMEROAQUI
-```
-
-`ALLOWED_NUMBER` é o número (formato `55DDDNNNNNNNNN`, sem `+`, sem
-espaço) que terá permissão de testar o bot enquanto ele está em
-desenvolvimento — qualquer outro remetente é ignorado.
-
-Suba o servidor:
-
-```powershell
+$env:DEBUG_WEBHOOK='1'
 npm start
 ```
 
-ou, para reiniciar automaticamente a cada alteração de código:
+Envie uma nova mensagem do número definido em `ALLOWED_NUMBER`. O diagnóstico imprime somente tipo de evento, direção e motivo de descarte, sem texto nem telefone. Se não surgir nenhuma linha `[webhook-debug]`, a Evolution não chamou o bot; confira o webhook da instância e `docker compose logs -f evolution-api` na pasta `../evolution-api-server`. Se surgir `HTTP 401`, confira o cabeçalho `x-webhook-secret`; se surgir `número fora de ALLOWED_NUMBER`, corrija o número de teste. Após o diagnóstico, interrompa o bot e reinicie com `DEBUG_WEBHOOK=0`.
 
-```powershell
-npm run dev
+## Fluxo
+
+O paciente escolhe idioma e setor. Para telefone novo, o bot envia `assets/termos-demonstrativos.pdf`, pede aceite e coleta CPF, nome e nascimento. Só cria o paciente após o aceite e a confirmação dos dados. Um telefone já cadastrado confirma os dados e segue ao menu sem receber os termos novamente. O arquivo PDF é **apenas demonstrativo** e deve ser substituído antes do uso institucional; `TERMS_PDF_PATH` aponta para o arquivo definitivo.
+
+As opções Português, Guarani, Ambulatório e Outros Setores aparecem no menu; as mensagens continuam em português. Remarcação, cancelamento e consulta de consultas são pedidos enviados à equipe, sem atualização da agenda hospitalar.
+
+Ao encaminhar o pedido, o bot avisa que ficará pausado. O paciente pode enviar `menu` ou `reiniciar` para retomá-lo. Após uma hora sem nova mensagem da atendente, qualquer mensagem reinicia o fluxo. Cada mensagem manual da atendente renova essa hora; respostas automáticas não renovam. Dados de um cadastro ainda incompleto ficam somente na memória e se perdem ao reiniciar o bot.
+
+## Lembrete manual
+
+A atendente envia pelo aplicativo do WhatsApp conectado à Evolution, na conversa de um paciente cadastrado:
+
+```text
+dia:25/11/2026
 ```
 
-Deve aparecer: `Servidor do chatbot Ambulatório HU rodando na porta 3000`.
-Deixe esse terminal aberto.
+Datas diferentes criam lembretes independentes. Repetir a mesma data não cria outro. Data de hoje, passada ou inexistente é dispensada. A data de preferência que o paciente informa ao pedir remarcação não agenda lembrete.
 
----
+O worker envia uma mensagem genérica entre **07:00 e antes de 07:05**, no fuso `America/Campo_Grande`. Após esse período, o lembrete expira. Um timeout de envio pode deixar o resultado como **incerto** para conferência manual; o sistema não reenvia automaticamente uma mensagem cujo resultado é desconhecido. Pedidos de cancelamento e remarcação não cancelam lembretes já criados.
 
-## 7. Parte 4 — Expondo com Ngrok e configurando o Webhook
+## Testes
 
-Em outro terminal PowerShell:
+`npm test` executa os testes locais. Para integração real com PostgreSQL, use um banco de teste **separado** em `127.0.0.1:55432/ambulatorio_test`, defina `TEST_DATABASE_URL`, aplique `npm run db:migrate:deploy` com as URLs apontando para esse banco e rode `npm test`. O teste de integração apaga somente os dados desse banco local; ele se recusa a executar com outra URL.
 
-```powershell
-ngrok http 3000
-```
-
-Copie a URL `https://...ngrok-free.app` (ou `.dev`, dependendo da conta)
-que aparecer.
-
-Volte ao Manager (http://localhost:8080/manager), na instância criada, em
-**Events → Webhook**, e preencha a **URL** com:
-
-```
-https://sua-url-do-ngrok/webhook
-```
-
-Salve. Para conferir se ficou certo:
-
-```powershell
-curl.exe "http://localhost:8080/webhook/find/ambulatorio-hu" -H "apikey: SUA_API_KEY"
-```
-
-A resposta deve trazer `"enabled": true` e `"events": ["MESSAGES_UPSERT"]`.
-
-> A URL do Ngrok muda toda vez que você reinicia o `ngrok http 3000` na
-> conta gratuita — atualize a URL no webhook do Manager sempre que isso
-> acontecer.
-
----
-
-## 8. Parte 5 — Testando
-
-Pelo WhatsApp do número configurado em `ALLOWED_NUMBER`, mande qualquer
-mensagem para o número conectado na instância. O bot deve responder com a
-primeira etapa do fluxo (escolha de idioma, em menu numérico).
-
-Acompanhe o terminal do `npm start`/`npm run dev` — qualquer erro de
-processamento aparece ali.
+Depois de configurar o WhatsApp de teste, confira manualmente: recebimento do PDF, aceite/cadastro, retorno por telefone, mensagem `dia:...` enviada pela atendente, confirmação, pausa/retomada e envio do lembrete. Testes simulados não comprovam o comportamento da conexão real da Evolution.

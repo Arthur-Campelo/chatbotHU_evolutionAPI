@@ -1,19 +1,32 @@
 {
   "name": "ambulatorio-hu-chatbot",
   "version": "1.0.0",
-  "description": "Servidor de webhook para chatbot do WhatsApp (Ambulatório HU) integrado à Evolution API, com suporte a botões e listas interativas.",
+  "description": "Chatbot do Ambulatório HU integrado à Evolution API, com cadastro de pacientes e lembretes.",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "worker": "node src/reminderWorker.js",
+    "test": "node --test",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy"
   },
-  "keywords": ["whatsapp", "evolution-api", "chatbot", "webhook"],
+  "keywords": [
+    "whatsapp",
+    "evolution-api",
+    "chatbot",
+    "webhook"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@prisma/client": "6.19.0",
     "axios": "^1.7.7",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "luxon": "^3.7.2",
+    "prisma": "6.19.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

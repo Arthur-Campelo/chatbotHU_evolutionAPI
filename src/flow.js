@@ -37,9 +37,16 @@ const pages = [
       { id: 'setor_outros', title: 'Outros Setores' },
     ],
     transitions: {
-      setor_ambulatorio: 'Termos de Serviço',
-      setor_outros: 'Termos de Serviço',
+      setor_ambulatorio: 'Identificar Paciente',
+      setor_outros: 'Identificar Paciente',
     },
+  },
+  { displayName: 'Identificar Paciente', inputType: 'auto', text: '' },
+  {
+    displayName: 'Confirmar Cadastro Existente', inputType: 'text_menu',
+    text: '',
+    options: [{ id: 'dados_sim', title: 'Sim' }, { id: 'dados_nao', title: 'Não' }],
+    transitions: { dados_sim: 'Menu Principal', dados_nao: 'Solicitar CPF' },
   },
   {
     displayName: 'Termos de Serviço',
@@ -47,7 +54,7 @@ const pages = [
     text:
       'Olá! Sou o assistente digital do HU.\n' +
       'Para iniciarmos o atendimento no Ambulatório, você aceita nossos Termos de Serviço e Privacidade?\n' +
-      'Lembramos que não é permitido o envio de documentos e imagens neste canal.',
+      'Lembramos que não é permitido o envio de documentos e imagens pelo paciente neste canal.',
     options: [
       { id: 'termos_sim', title: 'Sim' },
       { id: 'termos_nao', title: 'Não' },
@@ -63,7 +70,21 @@ const pages = [
     text: 'Por favor, digite seu CPF, apenas números, sem pontos ou traços (ex.: 01234567899).',
     saveAs: 'cpf',
     validate: 'cpf',
-    nextPage: 'Menu Principal',
+    nextPage: 'Solicitar Nome',
+  },
+  {
+    displayName: 'Solicitar Nome', inputType: 'text',
+    text: 'Qual é o seu nome completo?', saveAs: 'nome', nextPage: 'Solicitar Nascimento',
+  },
+  {
+    displayName: 'Solicitar Nascimento', inputType: 'text',
+    text: 'Qual é a sua data de nascimento? (DD/MM/AAAA)', saveAs: 'dataNascimento',
+    validate: 'nascimento', nextPage: 'Confirmar Novo Cadastro',
+  },
+  {
+    displayName: 'Confirmar Novo Cadastro', inputType: 'text_menu', text: '',
+    options: [{ id: 'cadastro_sim', title: 'Sim' }, { id: 'cadastro_nao', title: 'Não' }],
+    transitions: { cadastro_sim: 'Menu Principal', cadastro_nao: 'Solicitar CPF' },
   },
   {
     displayName: 'Menu Principal',
@@ -130,7 +151,7 @@ const pages = [
   {
     displayName: 'Encerramento',
     inputType: 'auto',
-    text: 'Obrigado, seu atendimento foi finalizado. Envie outra mensagem para reiniciar o atendimento.',
+    text: 'Seu pedido foi encaminhado à equipe. Enquanto você conversa com a atendente, o atendimento automático ficará pausado. Para voltar ao bot, envie “menu” ou “reiniciar”. Após uma hora sem mensagens da atendente, qualquer mensagem sua iniciará um novo atendimento.',
     nextPage: 'Start',
   },
 ];
